@@ -17,7 +17,7 @@ import game
 #################
 
 def createTeam(firstIndex, secondIndex, isRed,
-               first = 'BlockerAgent', second = 'OffensiveAgent'):
+               first = 'DefensiveAgent', second = 'OffensiveAgent'):
   """
   This function should return a list of two agents that will form the
   team, initialized using firstIndex and secondIndex as their agent
@@ -39,51 +39,6 @@ def createTeam(firstIndex, secondIndex, isRed,
 ##########
 # Agents #
 ##########
-
-class DummyAgent(CaptureAgent):
-  """
-  A Dummy agent to serve as an example of the necessary agent structure.
-  You should look at baselineTeam.py for more details about how to
-  create an agent as this is the bare minimum.
-  """
-
-  def registerInitialState(self, gameState):
-    """
-    This method handles the initial setup of the
-    agent to populate useful fields (such as what team
-    we're on). 
-    
-    A distanceCalculator instance caches the maze distances
-    between each pair of positions, so your agents can use:
-    self.distancer.getDistance(p1, p2)
-
-    IMPORTANT: This method may run for at most 15 seconds.
-    """
-
-    ''' 
-    Make sure you do not delete the following line. If you would like to
-    use Manhattan distances instead of maze distances in order to save
-    on initialization time, please take a look at
-    CaptureAgent.registerInitialState in captureAgents.py. 
-    '''
-    CaptureAgent.registerInitialState(self, gameState)
-
-    ''' 
-    Your initialization code goes here, if you need any.
-    '''
-
-
-  def chooseAction(self, gameState):
-    """
-    Picks among actions randomly.
-    """
-    actions = gameState.getLegalActions(self.index)
-
-    ''' 
-    You should change this in your own agent.
-    '''
-
-    return random.choice(actions)
 
 from distanceCalculator import Distancer
 
@@ -118,6 +73,127 @@ class BlockerAgent(CaptureAgent):
           self.onGuard = True
  
     return default
+    
+  def getSuccessor(self, gameState, action):
+    """
+    Finds the next successor which is a grid position (location tuple).
+    """
+    successor = gameState.generateSuccessor(self.index, action)
+    pos = successor.getAgentState(self.index).getPosition()
+    if pos != nearestPoint(pos):
+      # Only half a grid position was covered
+      return successor.generateSuccessor(self.index, action)
+    else:
+      return successor
+
+class DefensiveAgent(CaptureAgent):
+  
+  def registerInitialState(self, gameState):
+    CaptureAgent.registerInitialState(self, gameState)
+    self.powerUp = False
+    self.powerUpTimer = 0
+    self.foodLeft = len(self.getFood(gameState).asList())
+    self.inferenceModules = []
+    #create an ExactInference mod for each opponent
+    for index in self.getOpponents(gameState):
+      self.inferenceModules.append(ExactInference(gameState, self.index, index))
+    
+    self.firstMove = True
+    self.ghostBeliefs = [inf.getBeliefDistribution() for inf in self.inferenceModules]
+    if self.red:
+      self.scoreWeight = 500
+    else:
+      self.scoreWeight = -500
+      
+    
+  def chooseAction(self, gameState):
+   
+    for index, inf in enumerate(self.inferenceModules):
+      if not self.firstMove: inf.elapseTime(gameState)
+      self.firstMove = False
+      inf.observe(gameState)
+      self.ghostBeliefs[index] = inf.getBeliefDistribution()
+    self.displayDistributionsOverPositions(self.ghostBeliefs)
+    
+    #build up scores for each action based on features
+    actionScores = util.Counter()
+    for action in gameState.getLegalActions(self.index):
+      newState = gameState.generateSuccessor(self.index, action)
+      actionScores[self.getActionScore(newState, action)] = action
+    
+    print(actionScores)
+    #choose the action with the best score
+    bestAction = actionScores[max(actionScores)]
+    
+    #if the action leads to eating a power up, set the powerUp boolean
+    if gameState.generateSuccessor(self.index,bestAction).getAgentPosition(self.index) in self.getCapsules(gameState):
+      self.powerUp = True
+      self.powerUpTimer = 80
+      print("POWER UP!")
+      
+    if gameState.generateSuccessor(self.index,bestAction).getAgentPosition(self.index) in self.getFood(gameState).asList():
+      self.foodLeft -= 1
+    
+    if self.powerUp:
+      self.powerUpTimer -= 1
+      
+    if self.powerUpTimer == 0:
+      self.powerUp = False
+    
+    
+    return bestAction
+    
+  def getActionScore(self, gameState, action):
+    features = self.getFeatures(gameState, action)
+    score = sum([self.getWeights()[i]*features[i] for i in features])
+    print(self.getWeights())
+    print(features)
+    return score
+    
+  def getFeatures(self, gameState, action):
+    features =  {
+      'nearestPowerUp': 1.0 if len(self.getCapsules(gameState))==0 else -min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getCapsules(gameState)),
+      'inferedGhost': 0 if (self.getInferedGhostDistance(gameState) > len(gameState.getWalls()[0])/2) else self.getInferedGhostDistance(gameState),
+      'nearGhost': self.getNearGhostDistance(gameState, action),
+      'stop': 1 if action == Directions.STOP else 0,
+      'offensiveSide': self.getSide(gameState)
+    }
+    return features
+    
+  def getWeights(self):
+    return {
+      'nearestPowerUp': 2.0,
+      'inferedGhost': 1.0,
+      'nearGhost': 100000000.0,
+      'stop': -100,
+      'offensiveSide': -1000
+    } 
+
+  def getSide(self, gameState):
+    midpoint = len(gameState.getWalls()[0])/2
+    myPos = gameState.getAgentPosition(self.index)
+    if (self.red):
+      return int (myPos[0] > midpoint)
+    else:
+      return int (myPos[0] < midpoint)
+    
+  def getNearGhostDistance(self, gameState,action):
+    # Computes distance to invaders we can see
+    enemies = [gameState.getAgentState(i) for i in self.getOpponents(gameState)]
+    invaders = [a for a in enemies if a.isPacman and a.getPosition() != None]
+    nearest = 0
+    if len(invaders) > 0:
+      dists = [self.getMazeDistance(gameState.getAgentPosition(self.index), a.getPosition()) for a in invaders]
+      nearest = min(dists)
+    return nearest
+      
+  def getInferedGhostDistance(self, gameState):
+    probPositions = []
+    myPosition = gameState.getAgentPosition(self.index)
+    for inf in self.inferenceModules:
+      probPositions.append(inf.getBeliefDistribution().argMax())
+    distances = map(lambda x: self.getMazeDistance(x, myPosition), probPositions)
+    return min(distances)
     
   def getSuccessor(self, gameState, action):
     """
@@ -194,7 +270,7 @@ class OffensiveAgent(CaptureAgent):
     
   def getFeatures(self, gameState, action):
     features =  {
-      'nearestFood':2.0/min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getFood(gameState).asList()),
+      'nearestFood':1.0/min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getFood(gameState).asList()),
       'nearestPowerUp': 1.0 if len(self.getCapsules(gameState))==0 else 1.0/min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getCapsules(gameState)),
       'nearestGhost': 0.0, #(-(10*self.powerUpTimer) if self.powerUp else 1.0)*self.getNearestGhostDistance(gameState),
       'score': gameState.getScore(),
@@ -205,7 +281,7 @@ class OffensiveAgent(CaptureAgent):
     
   def getWeights(self):
     return {
-      'nearestFood':100.0,
+      'nearestFood':200.0,
       'nearestPowerUp': 50.0,
       'nearestGhost': -1.0,
       'score': self.scoreWeight,
@@ -233,6 +309,11 @@ class OffensiveAgent(CaptureAgent):
     else:
       return successor
  
+
+
+
+
+      
 from game import Actions
  
 class ExactInference:
@@ -251,7 +332,6 @@ class ExactInference:
   def observe(self, gameState):
     noisyDistance = gameState.getAgentDistances()[self.enemyIndex]
     myPosition = gameState.getAgentPosition(self.myIndex)
-    print(myPosition, self.myIndex)
     
     newBeliefs = util.Counter()
     for p in self.beliefs:
