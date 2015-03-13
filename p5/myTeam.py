@@ -17,7 +17,7 @@ import game
 #################
 
 def createTeam(firstIndex, secondIndex, isRed,
-               first = 'DefensiveAgent', second = 'OffensiveAgent'):
+               first = 'BlockerAgent', second = 'DefensiveAgent'):
   """
   This function should return a list of two agents that will form the
   team, initialized using firstIndex and secondIndex as their agent
@@ -134,7 +134,7 @@ class DefensiveAgent(CaptureAgent):
       newState = gameState.generateSuccessor(self.index, action)
       actionScores[self.getActionScore(newState, action)] = action
     
-    print(actionScores)
+    #print(actionScores)
     # Choose the action with the best score
     bestAction = actionScores[max(actionScores)]
     
@@ -160,16 +160,16 @@ class DefensiveAgent(CaptureAgent):
     features = self.getFeatures(gameState, action)
     # Get the dot product of the weight and feature vectors
     score = sum([self.getWeights()[i]*features[i] for i in features])
-    print(self.getWeights())
-    print(features)
+    #print(self.getWeights())
+    #print(features)
     return score
     
   def getFeatures(self, gameState, action):
     features =  {
       # The farther away the capsule is, the greater the negative value
       'nearestPowerUp': 1.0 if len(self.getCapsules(gameState))==0 else -min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getCapsules(gameState)),
-      # If the inferred distance is farther than half the width of the grid, ignore it, otherwise reward it for being closer
-      'inferedGhost': 0 if (self.getInferedGhostDistance(gameState) > len(gameState.getWalls()[0])/2) else self.getInferedGhostDistance(gameState),
+      # If the inferred distance is farther than 1/4 the width of the grid, ignore it, otherwise reward it for being closer
+      'inferedGhost': 0 if (self.getInferedGhostDistance(gameState) > len(gameState.getWalls()[0])/4) else self.getInferedGhostDistance(gameState),
       # This will either be zero (farther than 5 spaces away) or the distance (less than five)
       'nearGhost': -self.getNearGhostDistance(gameState, action),
       # Discourages stopping
@@ -354,7 +354,7 @@ class ExactInference:
   def observe(self, gameState):
     noisyDistance = gameState.getAgentDistances()[self.enemyIndex]
     myPosition = gameState.getAgentPosition(self.myIndex)
-    
+    print(noisyDistance)
     newBeliefs = util.Counter()
     for p in self.beliefs:
       trueDistance = util.manhattanDistance(p, myPosition)
