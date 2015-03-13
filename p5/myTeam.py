@@ -88,63 +88,77 @@ class BlockerAgent(CaptureAgent):
 
 class DefensiveAgent(CaptureAgent):
   
+  # Initialisation function
   def registerInitialState(self, gameState):
     CaptureAgent.registerInitialState(self, gameState)
+    
+    # Boolean representing if the agent currently is powered up
     self.powerUp = False
+    # Keeps track of how much time is left on the power up
     self.powerUpTimer = 0
     self.foodLeft = len(self.getFood(gameState).asList())
     self.inferenceModules = []
-    #create an ExactInference mod for each opponent
+    
+    # Create an ExactInference mod for each opponent
     for index in self.getOpponents(gameState):
       self.inferenceModules.append(ExactInference(gameState, self.index, index))
     
     self.firstMove = True
+    
+    # Initialise opponent beliefs
     self.ghostBeliefs = [inf.getBeliefDistribution() for inf in self.inferenceModules]
+    
+    # Changes the weighting on score based on what team the agents on,
+    # by default the score is the red teams score
     if self.red:
       self.scoreWeight = 500
     else:
       self.scoreWeight = -500
       
-    
+  # Choose the best action from the current gamestate based on features 
   def chooseAction(self, gameState):
-   
+    
+    # Update the beliefs for the opponents
     for index, inf in enumerate(self.inferenceModules):
       if not self.firstMove: inf.elapseTime(gameState)
       self.firstMove = False
       inf.observe(gameState)
       self.ghostBeliefs[index] = inf.getBeliefDistribution()
+    
+    # Displays the beliefs on the game board, provides zero actual functionality
     self.displayDistributionsOverPositions(self.ghostBeliefs)
     
-    #build up scores for each action based on features
+    # Build up scores for each action based on features
     actionScores = util.Counter()
     for action in gameState.getLegalActions(self.index):
       newState = gameState.generateSuccessor(self.index, action)
       actionScores[self.getActionScore(newState, action)] = action
     
     print(actionScores)
-    #choose the action with the best score
+    # Choose the action with the best score
     bestAction = actionScores[max(actionScores)]
     
-    #if the action leads to eating a power up, set the powerUp boolean
+    # If the action leads to eating a power up, set the powerUp boolean and start the timer
     if gameState.generateSuccessor(self.index,bestAction).getAgentPosition(self.index) in self.getCapsules(gameState):
       self.powerUp = True
       self.powerUpTimer = 80
       print("POWER UP!")
-      
+    
+    # Keeps track of how much food is left
     if gameState.generateSuccessor(self.index,bestAction).getAgentPosition(self.index) in self.getFood(gameState).asList():
       self.foodLeft -= 1
-    
+    # If the agent is currently powered up, decrement the timer
     if self.powerUp:
       self.powerUpTimer -= 1
-      
+    # When the timer reaches zero, reset the boolean value 
     if self.powerUpTimer == 0:
       self.powerUp = False
-    
     
     return bestAction
     
   def getActionScore(self, gameState, action):
     features = self.getFeatures(gameState, action)
+    # Get the dot product of the weight and feature vectors
     score = sum([self.getWeights()[i]*features[i] for i in features])
     print(self.getWeights())
     print(features)
@@ -152,10 +166,15 @@ class DefensiveAgent(CaptureAgent):
     
   def getFeatures(self, gameState, action):
     features =  {
+      # The farther away the capsule is, the greater the negative value
       'nearestPowerUp': 1.0 if len(self.getCapsules(gameState))==0 else -min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getCapsules(gameState)),
+      # If the inferred distance is farther than half the width of the grid, ignore it, otherwise reward it for being closer
       'inferedGhost': 0 if (self.getInferedGhostDistance(gameState) > len(gameState.getWalls()[0])/2) else self.getInferedGhostDistance(gameState),
-      'nearGhost': self.getNearGhostDistance(gameState, action),
+      # This will either be zero (farther than 5 spaces away) or the distance (less than five)
+      'nearGhost': -self.getNearGhostDistance(gameState, action),
+      # Discourages stopping
       'stop': 1 if action == Directions.STOP else 0,
+      # Discourages going to the offensive side
       'offensiveSide': self.getSide(gameState)
     }
     return features
@@ -168,7 +187,8 @@ class DefensiveAgent(CaptureAgent):
       'stop': -100,
       'offensiveSide': -1000
     } 
-
+  
+  # Returns a 1 if on the offensive side, 0 if own side
   def getSide(self, gameState):
     midpoint = len(gameState.getWalls()[0])/2
     myPos = gameState.getAgentPosition(self.index)
@@ -176,7 +196,8 @@ class DefensiveAgent(CaptureAgent):
       return int (myPos[0] > midpoint)
     else:
       return int (myPos[0] < midpoint)
-    
+  
+  # Returns 0 if no ghosts can be seen (they are farther than 5 spaces away from either agents)
   def getNearGhostDistance(self, gameState,action):
     # Computes distance to invaders we can see
     enemies = [gameState.getAgentState(i) for i in self.getOpponents(gameState)]
@@ -186,7 +207,8 @@ class DefensiveAgent(CaptureAgent):
       dists = [self.getMazeDistance(gameState.getAgentPosition(self.index), a.getPosition()) for a in invaders]
       nearest = min(dists)
     return nearest
-      
+  
+  # Returns the distance to the closest ghost based on the inference modules
   def getInferedGhostDistance(self, gameState):
     probPositions = []
     myPosition = gameState.getAgentPosition(self.index)
