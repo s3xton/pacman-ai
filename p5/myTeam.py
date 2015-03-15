@@ -134,7 +134,7 @@ class DefensiveAgent(CaptureAgent):
       newState = gameState.generateSuccessor(self.index, action)
       actionScores[self.getActionScore(newState, action)] = action
     
-    print(actionScores)
+    #print(actionScores)
     # Choose the action with the best score
     bestAction = actionScores[max(actionScores)]
     
@@ -142,7 +142,7 @@ class DefensiveAgent(CaptureAgent):
     if gameState.generateSuccessor(self.index,bestAction).getAgentPosition(self.index) in self.getCapsules(gameState):
       self.powerUp = True
       self.powerUpTimer = 80
-      print("POWER UP!")
+      #print("POWER UP!")
     
     # Keeps track of how much food is left
     if gameState.generateSuccessor(self.index,bestAction).getAgentPosition(self.index) in self.getFood(gameState).asList():
@@ -160,8 +160,8 @@ class DefensiveAgent(CaptureAgent):
     features = self.getFeatures(gameState, action)
     # Get the dot product of the weight and feature vectors
     score = sum([self.getWeights()[i]*features[i] for i in features])
-    print(self.getWeights())
-    print(features)
+    #print(self.getWeights())
+    #print(features)
     return score
     
   def getFeatures(self, gameState, action):
@@ -271,7 +271,7 @@ class OffensiveAgent(CaptureAgent):
     if gameState.generateSuccessor(self.index,bestAction).getAgentPosition(self.index) in self.getCapsules(gameState):
       self.powerUp = True
       self.powerUpTimer = 80
-      print("POWER UP!")
+      #print("POWER UP!")
       
     if gameState.generateSuccessor(self.index,bestAction).getAgentPosition(self.index) in self.getFood(gameState).asList():
       self.foodLeft -= 1
@@ -331,11 +331,6 @@ class OffensiveAgent(CaptureAgent):
     else:
       return successor
  
-
-
-
-
-      
 from game import Actions
  
 class ExactInference:
@@ -343,42 +338,75 @@ class ExactInference:
   def __init__(self, gameState, myIndex, enemyIndex):
     "Begin with a uniform distribution over ghost positions."
     self.beliefs = util.Counter()
-    self.legalPositions = [p for p in gameState.getWalls().asList(False) if p[1] > 1]
-    for p in self.legalPositions: self.beliefs[p] = 1.0
-    self.beliefs.normalize()
-    self.possiblePositions = self.getPossibleNextPositions(gameState)
-    self.prob = 1.0/len(self.possiblePositions)
+    self.allLegalPositions = [p for p in gameState.getWalls().asList(False) if p[1] > 1]
+    self.initBeliefs();
     self.enemyIndex = enemyIndex
     self.myIndex = myIndex
   
   def observe(self, gameState):
+
+    # Get current noisy pos and our agent position
     noisyDistance = gameState.getAgentDistances()[self.enemyIndex]
+    exactPos = gameState.getAgentPosition(self.enemyIndex)
     myPosition = gameState.getAgentPosition(self.myIndex)
-    
+
+
+    # Create new beliefs variable
     newBeliefs = util.Counter()
-    for p in self.beliefs:
-      trueDistance = util.manhattanDistance(p, myPosition)
-      newBeliefs[p] = gameState.getDistanceProb(trueDistance, noisyDistance) * self.beliefs[p]
+
+    # Check if within 5 spaces
+    if exactPos:
+      newBeliefs[exactPos] = 1.0
+    else:
+      # Iterate through every legal position
+      for p in self.beliefs:
+        # Get the true distance from agent pos -> this pos
+        trueDistance = util.manhattanDistance(p, myPosition)
+        # Find the probability that this is a noisy position
+        prob = gameState.getDistanceProb(trueDistance, noisyDistance) * self.beliefs[p]
+        # Only add position to the new beliefs array if it is noisy
+        #if(prob != 0): 
+        newBeliefs[p] =  prob
+
+    # Save updated belief locations to instance variable
     newBeliefs.normalize()
     self.beliefs = newBeliefs
-    
-    
-    
+
   def elapseTime(self, gameState):
     newBeliefs = util.Counter()
+
+    # Updates all the possible ghost legal positions for the elapsed state
+    possiblePositions = self.getAllPossibleNextPositions(gameState);
+    
+    # Iterates over every position in the current belief
     for oldPos in self.beliefs:
-      #just assume all the possible positions have the same probability
-      for newPos in self.possiblePositions:
-        newBeliefs[newPos] += self.prob * self.beliefs[oldPos] #p(t+1, t) = p(t+1 | t) * p(t)
+
+      # Iterates over each possible move for this position
+      if(len(possiblePositions) > 0):
+        for legalMovePos in possiblePositions[oldPos]:
+
+          # Add (1/num_moves * old_belief) to the new belief for this legal move
+          newBeliefs[legalMovePos] += (1.0/len(possiblePositions[oldPos])) * self.beliefs[oldPos] #p(t+1, t) = p(t+1 | t) * p(t)
+      
     newBeliefs.normalize()   
     self.beliefs = newBeliefs      
   
-  def getPossibleNextPositions(self, gameState):
-    possiblePositions = []
+  # Returns dictionary of (x,y) : [possible moves for x,y] for every self.belief
+  def getAllPossibleNextPositions(self, gameState):
+    possiblePositions = {}
     for pos in self.beliefs:
       nextPos = Actions.getLegalNeighbors(pos, gameState.getWalls())#[(x+1,y),(x-1,y),(x,y+1),(x,y-1)]
-      possiblePositions.extend(nextPos)#filter(lambda x: not gameState.hasWall(x[0],x[1]),nextPos))
+
+      possiblePositions[pos] = nextPos#filter(lambda x: not gameState.hasWall(x[0],x[1]),nextPos))
     return possiblePositions
+
+  def getPossibleNextPositions(self, gameState, pos):
+    return Actions.getLegalNeighbors(pos, gameState.getWalls())
 
   def getBeliefDistribution(self):
     return self.beliefs
+
+  def initBeliefs(self):
+    # Reset beliefs to 1.0 for all legal positions on map
+    for p in self.allLegalPositions: self.beliefs[p] = 1.0
+    self.beliefs.normalize();
