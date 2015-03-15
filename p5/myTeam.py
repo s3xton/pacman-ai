@@ -170,7 +170,7 @@ class DefensiveAgent(CaptureAgent):
       # The farther away the capsule is, the greater the negative value
       'nearestPowerUp': 1.0 if len(self.getCapsules(gameState))==0 else min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getCapsules(gameState)),
       # If the inferred distance is farther than 1/4 the width of the grid, ignore it, otherwise reward it for being closer
-      'inferredGhost': self.getInferedGhostDistance(gameState),
+      'inferredGhost': self.getClosestInferredGhost(gameState)[1],
       # This will either be zero (farther than 5 spaces away) or the distance (less than five)
       'nearGhost': self.getNearGhostDistance(gameState, action),
       # Discourages stopping
@@ -209,14 +209,15 @@ class DefensiveAgent(CaptureAgent):
       nearest = min(dists)
     return nearest
   
-  # Returns the distance to the closest ghost based on the inference modules
-  def getInferedGhostDistance(self, gameState):
+  # Returns the position of the closest ghost based on the inference modules
+  def getClosestInferredGhost(self, gameState):
     probPositions = []
     myPosition = gameState.getAgentPosition(self.index)
     for inf in self.inferenceModules:
       probPositions.append(inf.getBeliefDistribution().argMax())
     distances = map(lambda x: self.getMazeDistance(x, myPosition), probPositions)
-    return min(distances)
+    mindistance = min(distances);
+    return [probPositions[distances.index(mindistance)], mindistance]
     
   def getSuccessor(self, gameState, action):
     """
