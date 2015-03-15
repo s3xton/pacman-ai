@@ -158,7 +158,7 @@ class DefensiveAgent(CaptureAgent):
     
   def getActionScore(self, gameState, action):
     features = self.getFeatures(gameState, action)
-    print(features)
+    #print(features)
     # Get the dot product of the weight and feature vectors
     score = sum([self.getWeights()[i]*features[i] for i in features])
     #print(self.getWeights())
@@ -184,15 +184,16 @@ class DefensiveAgent(CaptureAgent):
     return {
       'nearestPowerUp': 0.0,#-1.0,
       'inferredGhost': -1.0,
-      'nearGhost': -100000000.0,
+      'nearGhost': -1000.0,
       'stop': 0.0,#,-100,
-      'offensiveSide': 0.0#-100
+      'offensiveSide': -100000000.0#-100
     } 
   
   # Returns a 1 if on the offensive side, 0 if own side
   def getSide(self, gameState):
-    midpoint = len(gameState.getWalls()[0])/2
+    midpoint = len(gameState.getWalls()[0])
     myPos = gameState.getAgentPosition(self.index)
+    print("red: ",self.red," midpoint: ", midpoint , " myPos: " ,myPos)
     if (self.red):
       return int (myPos[0] > midpoint)
     else:
