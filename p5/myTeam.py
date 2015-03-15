@@ -17,7 +17,7 @@ import game
 #################
 
 def createTeam(firstIndex, secondIndex, isRed,
-               first = 'DefensiveAgent', second = 'OffensiveAgent'):
+               first = 'OffensiveAgent', second = 'DefensiveAgent'):
   """
   This function should return a list of two agents that will form the
   team, initialized using firstIndex and secondIndex as their agent
@@ -168,8 +168,8 @@ class DefensiveAgent(CaptureAgent):
     features =  {
       # The farther away the capsule is, the greater the negative value
       'nearestPowerUp': 1.0 if len(self.getCapsules(gameState))==0 else -min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getCapsules(gameState)),
-      # If the inferred distance is farther than half the width of the grid, ignore it, otherwise reward it for being closer
-      'inferedGhost': 0 if (self.getInferedGhostDistance(gameState) > len(gameState.getWalls()[0])/2) else self.getInferedGhostDistance(gameState),
+      # If the inferred distance is farther than 1/4 the width of the grid, ignore it, otherwise reward it for being closer
+      'inferedGhost': 0 if (self.getInferedGhostDistance(gameState) > len(gameState.getWalls()[0])/4) else self.getInferedGhostDistance(gameState),
       # This will either be zero (farther than 5 spaces away) or the distance (less than five)
       'nearGhost': -self.getNearGhostDistance(gameState, action),
       # Discourages stopping
@@ -349,8 +349,6 @@ class ExactInference:
     noisyDistance = gameState.getAgentDistances()[self.enemyIndex]
     exactPos = gameState.getAgentPosition(self.enemyIndex)
     myPosition = gameState.getAgentPosition(self.myIndex)
-
-
     # Create new beliefs variable
     newBeliefs = util.Counter()
 
