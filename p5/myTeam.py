@@ -158,6 +158,7 @@ class DefensiveAgent(CaptureAgent):
     
   def getActionScore(self, gameState, action):
     features = self.getFeatures(gameState, action)
+    print(features)
     # Get the dot product of the weight and feature vectors
     score = sum([self.getWeights()[i]*features[i] for i in features])
     #print(self.getWeights())
@@ -167,11 +168,11 @@ class DefensiveAgent(CaptureAgent):
   def getFeatures(self, gameState, action):
     features =  {
       # The farther away the capsule is, the greater the negative value
-      'nearestPowerUp': 1.0 if len(self.getCapsules(gameState))==0 else -min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getCapsules(gameState)),
+      'nearestPowerUp': 1.0 if len(self.getCapsules(gameState))==0 else min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getCapsules(gameState)),
       # If the inferred distance is farther than 1/4 the width of the grid, ignore it, otherwise reward it for being closer
-      'inferedGhost': 0 if (self.getInferedGhostDistance(gameState) > len(gameState.getWalls()[0])/4) else self.getInferedGhostDistance(gameState),
+      'inferredGhost': self.getInferedGhostDistance(gameState),
       # This will either be zero (farther than 5 spaces away) or the distance (less than five)
-      'nearGhost': -self.getNearGhostDistance(gameState, action),
+      'nearGhost': self.getNearGhostDistance(gameState, action),
       # Discourages stopping
       'stop': 1 if action == Directions.STOP else 0,
       # Discourages going to the offensive side
@@ -181,11 +182,11 @@ class DefensiveAgent(CaptureAgent):
     
   def getWeights(self):
     return {
-      'nearestPowerUp': 2.0,
-      'inferedGhost': 1.0,
-      'nearGhost': 100000000.0,
-      'stop': -100,
-      'offensiveSide': -1000
+      'nearestPowerUp': 0.0,#-1.0,
+      'inferredGhost': -1.0,
+      'nearGhost': -100000000.0,
+      'stop': 0.0,#,-100,
+      'offensiveSide': 0.0#-100
     } 
   
   # Returns a 1 if on the offensive side, 0 if own side
@@ -351,7 +352,10 @@ class ExactInference:
     myPosition = gameState.getAgentPosition(self.myIndex)
     # Create new beliefs variable
     newBeliefs = util.Counter()
-
+    
+    if(sum(self.beliefs.values()) == 0):
+      self.initBeliefs()
+      
     # Check if within 5 spaces
     if exactPos:
       newBeliefs[exactPos] = 1.0
