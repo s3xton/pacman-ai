@@ -197,7 +197,7 @@ class DefensiveAgent(CaptureAgent):
       return int (pos[0] > midpoint)
     else:
       return int (pos[0] < midpoint)
-  
+      
   # Returns 0 if no ghosts can be seen (they are farther than 5 spaces away from either agents)
   def getNearGhostDistance(self, gameState,action):
     # Computes distance to invaders we can see
