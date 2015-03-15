@@ -170,13 +170,13 @@ class DefensiveAgent(CaptureAgent):
       # The farther away the capsule is, the greater the negative value
       'nearestPowerUp': 1.0 if len(self.getCapsules(gameState))==0 else min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getCapsules(gameState)),
       # If the inferred distance is farther than 1/4 the width of the grid, ignore it, otherwise reward it for being closer
-      'inferredGhost': self.getClosestInferredGhost(gameState)[1],
+      'inferredGhost': self.getClosestInferredGhost(gameState)[1] if (not self.getSide(gameState, self.getClosestInferredGhost(gameState)[0])) else 0,
       # This will either be zero (farther than 5 spaces away) or the distance (less than five)
       'nearGhost': self.getNearGhostDistance(gameState, action),
       # Discourages stopping
       'stop': 1 if action == Directions.STOP else 0,
       # Discourages going to the offensive side
-      'offensiveSide': self.getSide(gameState)
+      'offensiveSide': self.getSide(gameState, gameState.getAgentPosition(self.index))
     }
     return features
     
@@ -190,14 +190,13 @@ class DefensiveAgent(CaptureAgent):
     } 
   
   # Returns a 1 if on the offensive side, 0 if own side
-  def getSide(self, gameState):
+  def getSide(self, gameState, pos):
     midpoint = len(gameState.getWalls()[0])
-    myPos = gameState.getAgentPosition(self.index)
-    print("red: ",self.red," midpoint: ", midpoint , " myPos: " ,myPos)
+    print("red: ",self.red," midpoint: ", midpoint , " pos: " ,pos)
     if (self.red):
-      return int (myPos[0] > midpoint)
+      return int (pos[0] > midpoint)
     else:
-      return int (myPos[0] < midpoint)
+      return int (pos[0] < midpoint)
   
   # Returns 0 if no ghosts can be seen (they are farther than 5 spaces away from either agents)
   def getNearGhostDistance(self, gameState,action):
@@ -210,7 +209,7 @@ class DefensiveAgent(CaptureAgent):
       nearest = min(dists)
     return nearest
   
-  # Returns the position of the closest ghost based on the inference modules
+  # Returns the (position, distance) of the closest ghost based on the inference modules
   def getClosestInferredGhost(self, gameState):
     probPositions = []
     myPosition = gameState.getAgentPosition(self.index)
