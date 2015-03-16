@@ -238,6 +238,7 @@ class OffensiveAgent(CaptureAgent):
     CaptureAgent.registerInitialState(self, gameState)
     self.powerUp = False
     self.powerUpTimer = 0
+    self.capsules = self.getCapsules(gameState)
     self.foodLeft = len(self.getFood(gameState).asList())
     self.inferenceModules = []
     #create an ExactInference mod for each opponent
@@ -262,6 +263,8 @@ class OffensiveAgent(CaptureAgent):
     self.displayDistributionsOverPositions(self.ghostBeliefs)
     """
     #build up scores for each action based on features
+    self.capsules = self.getCapsules(gameState)
+
     actionScores = util.Counter()
     for action in gameState.getLegalActions(self.index):
       newState = gameState.generateSuccessor(self.index, action)
@@ -291,27 +294,30 @@ class OffensiveAgent(CaptureAgent):
   def getActionScore(self, gameState, action):
     features = self.getFeatures(gameState, action)
     score = sum([self.getWeights()[i]*features[i] for i in features])
+    #print "[",action, score,"]"
     return score
     
   def getFeatures(self, gameState, action):
     features =  {
       'nearestFood':1.0/min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getFood(gameState).asList()),
       'nearestPowerUp': 1.0 if len(self.getCapsules(gameState))==0 else 1.0/min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getCapsules(gameState)),
-      'nearestGhost': 0.0, #(-(10*self.powerUpTimer) if self.powerUp else 1.0)*self.getNearestGhostDistance(gameState),
+      'nearestGhost': (-(self.powerUpTimer/4) if self.powerUp else 1.0)*self.getNearestGhostDistance(gameState),
       'score': gameState.getScore(),
-      'powerUp': 1.0 if gameState.getAgentPosition(self.index) in self.getCapsules(gameState) else 0,
+      'stop': 1 if action == Directions.STOP else 0,
       'foodEaten': 1.0 if len(self.getFood(gameState).asList()) < self.foodLeft else 0,
     }
+
+    #print gameState.getAgentPosition(self.index) , self.getCapsules(gameState)
     return features
     
   def getWeights(self):
     return {
-      'nearestFood':200.0,
-      'nearestPowerUp': 50.0,
-      'nearestGhost': -1.0,
+      'nearestFood':10.0,
+      'nearestPowerUp': 100.0,
+      'nearestGhost': -1.0 / 10,
       'score': self.scoreWeight,
-      'powerUp': 100000000000.0,
-      'foodEaten': 50.0
+      'stop': -5.0,
+      'foodEaten': 10.0
     }  
     
   def getNearestGhostDistance(self, gameState):
