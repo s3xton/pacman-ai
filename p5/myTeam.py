@@ -32,9 +32,15 @@ def createTeam(firstIndex, secondIndex, isRed,
   any extra arguments, so you should make sure that the default
   behavior is what you want for the nightly contest.
   """
+  agent1 = eval(first)(firstIndex)
+  agent2 = eval(second)(secondIndex)
+  globalModels = []
+
+  agent1.setModel(globalModels)
+  agent2.setModel(globalModels)
 
   # The following line is an example only; feel free to change it.
-  return [eval(first)(firstIndex), eval(second)(secondIndex)]
+  return [agent1, agent2]
 
 ##########
 # Agents #
@@ -92,16 +98,20 @@ class DefensiveAgent(CaptureAgent):
   def registerInitialState(self, gameState):
     CaptureAgent.registerInitialState(self, gameState)
     
+    # self.globalBeliefs
+
     # Boolean representing if the agent currently is powered up
     self.powerUp = False
     # Keeps track of how much time is left on the power up
     self.powerUpTimer = 0
     self.foodLeft = len(self.getFood(gameState).asList())
+    self.allLegalPositions = [p for p in gameState.getWalls().asList(False) if p[1] > 1]
     self.inferenceModules = []
     
     # Create an ExactInference mod for each opponent
     for index in self.getOpponents(gameState):
-      self.inferenceModules.append(ExactInference(gameState, self.index, index))
+      infmodel = ExactInference(gameState, self.index, index)
+      self.inferenceModules.append(infmodel)
     
     self.firstMove = True
     
@@ -119,14 +129,24 @@ class DefensiveAgent(CaptureAgent):
   def chooseAction(self, gameState):
     
     # Update the beliefs for the opponents
-    for index, inf in enumerate(self.inferenceModules):
-      if not self.firstMove: inf.elapseTime(gameState)
+    for index, inf in enumerate(self.inferenceModules): 
+      if(len(self.globalBeliefs) < 2):
+        self.globalBeliefs.append(inf.getBeliefDistribution())
+
+      if not self.firstMove: inf.elapseTime(gameState, self.globalBeliefs[index])
+
+      self.globalBeliefs[index] = inf.getBeliefDistribution()
+
       self.firstMove = False
-      inf.observe(gameState)
-      self.ghostBeliefs[index] = inf.getBeliefDistribution()
+      inf.observe(gameState, self.globalBeliefs[index])
+
+      if(len(self.globalBeliefs) >= 2):
+        self.globalBeliefs[index] = inf.getBeliefDistribution()
+      self.ghostBeliefs[index] = self.globalBeliefs[index]
+      inf.setBeliefDistribution(self.globalBeliefs[index])
     
     # Displays the beliefs on the game board, provides zero actual functionality
-    self.displayDistributionsOverPositions(self.ghostBeliefs)
+    self.displayDistributionsOverPositions(self.globalBeliefs)
     
     # Build up scores for each action based on features
     actionScores = util.Counter()
@@ -231,6 +251,10 @@ class DefensiveAgent(CaptureAgent):
     else:
       return successor
 
+  def setModel(self, globalModel):
+    self.globalBeliefs = globalModel
+
+
 class OffensiveAgent(CaptureAgent):
   
   def registerInitialState(self, gameState):
@@ -238,14 +262,20 @@ class OffensiveAgent(CaptureAgent):
     self.powerUp = False
     self.powerUpTimer = 0
     self.capsules = self.getCapsules(gameState)
+    self.allLegalPositions = [p for p in gameState.getWalls().asList(False) if p[1] > 1]
     self.foodLeft = len(self.getFood(gameState).asList())
     self.inferenceModules = []
-    #create an ExactInference mod for each opponent
+    # Create an ExactInference mod for each opponent
     for index in self.getOpponents(gameState):
-      self.inferenceModules.append(ExactInference(gameState, self.index, index))
+      infmodel = ExactInference(gameState, self.index, index)
+      self.inferenceModules.append(infmodel)
     
+    
+    self.ghostBeliefs = [belief for belief in self.globalBeliefs]
+
     self.firstMove = True
     self.ghostBeliefs = [inf.getBeliefDistribution() for inf in self.inferenceModules]
+
     if self.red:
       self.scoreWeight = 500
     else:
@@ -253,14 +283,27 @@ class OffensiveAgent(CaptureAgent):
       
     
   def chooseAction(self, gameState):
-    """
-    for index, inf in enumerate(self.inferenceModules):
-      if not self.firstMove: inf.elapseTime(gameState)
+
+    # Update the beliefs for the opponents
+    for index, inf in enumerate(self.inferenceModules): 
+      if(len(self.globalBeliefs) < 2):
+        self.globalBeliefs.append(inf.getBeliefDistribution())
+
+      if not self.firstMove: inf.elapseTime(gameState, self.globalBeliefs[index])
+      
+      self.globalBeliefs[index] = inf.getBeliefDistribution()
+
       self.firstMove = False
-      inf.observe(gameState)
-      self.ghostBeliefs[index] = inf.getBeliefDistribution()
-    self.displayDistributionsOverPositions(self.ghostBeliefs)
-    """
+      inf.observe(gameState, self.globalBeliefs[index])
+
+      if(len(self.globalBeliefs) >= 2):
+        self.globalBeliefs[index] = inf.getBeliefDistribution()
+      self.ghostBeliefs[index] = self.globalBeliefs[index]
+      inf.setBeliefDistribution(self.globalBeliefs[index])
+    
+    # Displays the beliefs on the game board, provides zero actual functionality
+    self.displayDistributionsOverPositions(self.globalBeliefs)
+
     #build up scores for each action based on features
     self.capsules = self.getCapsules(gameState)
 
@@ -293,30 +336,38 @@ class OffensiveAgent(CaptureAgent):
   def getActionScore(self, gameState, action):
     features = self.getFeatures(gameState, action)
     score = sum([self.getWeights()[i]*features[i] for i in features])
-    #print "[",action, score,"]"
     return score
+
+  # Returns true if state is a dead end
+  def isDeadEnd(self, gameState):
+    return True if len(gameState.getLegalActions(self.index)) == 2 else False
     
   def getFeatures(self, gameState, action):
     features =  {
+      # Get distance to nearest food
       'nearestFood':1.0/min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getFood(gameState).asList()),
+      # Get distance to nearest powerup
       'nearestPowerUp': 1.0 if len(self.getCapsules(gameState))==0 else 1.0/min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getCapsules(gameState)),
-      'nearestGhost': (-(self.powerUpTimer/4) if self.powerUp else 1.0)*self.getNearestGhostDistance(gameState),
+      # Get distance to nearest ghost
+      'nearestGhost': ((-10 * self.powerUpTimer/4) if self.powerUp else 1.0)*self.getNearestGhostDistance(gameState),
+      # Don't go down an immediate dead end if scared
+      'deadEnd': 1 if ((not self.powerUp) and self.isDeadEnd(gameState) and self.getNearestGhostDistance(gameState) < 3) else 0,
       'score': gameState.getScore(),
       'stop': 1 if action == Directions.STOP else 0,
       'foodEaten': 1.0 if len(self.getFood(gameState).asList()) < self.foodLeft else 0,
     }
 
-    #print gameState.getAgentPosition(self.index) , self.getCapsules(gameState)
     return features
     
   def getWeights(self):
     return {
-      'nearestFood':10.0,
+      'nearestFood':100.0,
       'nearestPowerUp': 100.0,
       'nearestGhost': -1.0 / 10,
       'score': self.scoreWeight,
+      'deadEnd': -5.0,
       'stop': -5.0,
-      'foodEaten': 10.0
+      'foodEaten': 50.0
     }  
     
   def getNearestGhostDistance(self, gameState):
@@ -342,6 +393,9 @@ class OffensiveAgent(CaptureAgent):
       return successor.generateSuccessor(self.index, action)
     else:
       return successor
+
+  def setModel(self, globalModel):
+    self.globalBeliefs = globalModel
  
 from game import Actions
  
@@ -355,7 +409,7 @@ class ExactInference:
     self.enemyIndex = enemyIndex
     self.myIndex = myIndex
   
-  def observe(self, gameState):
+  def observe(self, gameState, globalBeliefs):
 
     # Get current noisy pos and our agent position
     noisyDistance = gameState.getAgentDistances()[self.enemyIndex]
@@ -372,11 +426,11 @@ class ExactInference:
       newBeliefs[exactPos] = 1.0
     else:
       # Iterate through every legal position
-      for p in self.beliefs:
+      for p in globalBeliefs:
         # Get the true distance from agent pos -> this pos
         trueDistance = util.manhattanDistance(p, myPosition)
         # Find the probability that this is a noisy position
-        prob = gameState.getDistanceProb(trueDistance, noisyDistance) * self.beliefs[p]
+        prob = gameState.getDistanceProb(trueDistance, noisyDistance) * globalBeliefs[p]
         # Only add position to the new beliefs array if it is noisy
         #if(prob != 0): 
         newBeliefs[p] =  prob
@@ -385,29 +439,29 @@ class ExactInference:
     newBeliefs.normalize()
     self.beliefs = newBeliefs
 
-  def elapseTime(self, gameState):
+  def elapseTime(self, gameState, globalBeliefs):
     newBeliefs = util.Counter()
 
     # Updates all the possible ghost legal positions for the elapsed state
-    possiblePositions = self.getAllPossibleNextPositions(gameState);
+    possiblePositions = self.getAllPossibleNextPositions(gameState, globalBeliefs);
     
     # Iterates over every position in the current belief
-    for oldPos in self.beliefs:
+    for oldPos in globalBeliefs:
 
       # Iterates over each possible move for this position
       if(len(possiblePositions) > 0):
         for legalMovePos in possiblePositions[oldPos]:
 
           # Add (1/num_moves * old_belief) to the new belief for this legal move
-          newBeliefs[legalMovePos] += (1.0/len(possiblePositions[oldPos])) * self.beliefs[oldPos] #p(t+1, t) = p(t+1 | t) * p(t)
+          newBeliefs[legalMovePos] += (1.0/len(possiblePositions[oldPos])) * globalBeliefs[oldPos] #p(t+1, t) = p(t+1 | t) * p(t)
       
     newBeliefs.normalize()   
     self.beliefs = newBeliefs      
   
   # Returns dictionary of (x,y) : [possible moves for x,y] for every self.belief
-  def getAllPossibleNextPositions(self, gameState):
+  def getAllPossibleNextPositions(self, gameState, globalBeliefs):
     possiblePositions = {}
-    for pos in self.beliefs:
+    for pos in globalBeliefs:
       nextPos = Actions.getLegalNeighbors(pos, gameState.getWalls())#[(x+1,y),(x-1,y),(x,y+1),(x,y-1)]
 
       possiblePositions[pos] = nextPos#filter(lambda x: not gameState.hasWall(x[0],x[1]),nextPos))
@@ -418,6 +472,9 @@ class ExactInference:
 
   def getBeliefDistribution(self):
     return self.beliefs
+
+  def setBeliefDistribution(self, beliefs):
+    self.beliefs = beliefs
 
   def initBeliefs(self):
     # Reset beliefs to 1.0 for all legal positions on map
