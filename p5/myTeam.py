@@ -142,7 +142,6 @@ class DefensiveAgent(CaptureAgent):
     if gameState.generateSuccessor(self.index,bestAction).getAgentPosition(self.index) in self.getCapsules(gameState):
       self.powerUp = True
       self.powerUpTimer = 80
-      #print("POWER UP!")
     
     # Keeps track of how much food is left
     if gameState.generateSuccessor(self.index,bestAction).getAgentPosition(self.index) in self.getFood(gameState).asList():
@@ -158,35 +157,32 @@ class DefensiveAgent(CaptureAgent):
     
   def getActionScore(self, gameState, action):
     features = self.getFeatures(gameState, action)
-    #print(features)
     # Get the dot product of the weight and feature vectors
     score = sum([self.getWeights()[i]*features[i] for i in features])
-    #print(self.getWeights())
-    #print(features)
     return score
     
   def getFeatures(self, gameState, action):
     features =  {
-      # The farther away the capsule is, the greater the negative value
-      'nearestPowerUp': 1.0 if len(self.getCapsules(gameState))==0 else min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getCapsules(gameState)),
-      # If the inferred distance is farther than 1/4 the width of the grid, ignore it, otherwise reward it for being closer
+      # Go towards the nearest inferred distance
       'inferredGhost': self.getClosestInferredGhost(gameState)[1],
-      # This will either be zero (farther than 5 spaces away) or the distance (less than five)
-      'nearGhost': self.getNearGhostDistance(gameState, action),
+      # This will either be zero (farther than 5 spaces away) or the distance (less than five), if the ghost is scarred this is negated to make it run away
+      'nearGhost': self.getNearGhostDistance(gameState) if (not gameState.getAgentState(self.index).scaredTimer) else -self.getNearGhostDistance(gameState),
       # Discourages stopping
       'stop': 1 if action == Directions.STOP else 0,
-      # Discourages going to the offensive side
-      'offensiveSide': self.getSide(gameState, gameState.getAgentPosition(self.index))
+      # Prevents the defensive agent going to the offensive side
+      'offensiveSide': self.getSide(gameState, gameState.getAgentPosition(self.index)),
+      # Don't go down an immediate dead end if scared
+      'deadEnd': 1 if (gameState.getAgentState(self.index).scaredTimer and self.isDeadEnd(gameState)) else 0
     }
     return features
     
   def getWeights(self):
     return {
-      'nearestPowerUp': 0.0,#-1.0,
       'inferredGhost': -1.0,
       'nearGhost': -1000.0,
-      'stop': -1.0,#,-100,
-      'offensiveSide': -100000000.0#-100
+      'stop': -1.0,
+      'offensiveSide': -100000000.0,
+      'deadEnd':-10000.0
     } 
   
   # Returns a 1 if on the offensive side, 0 if own side
@@ -197,10 +193,13 @@ class DefensiveAgent(CaptureAgent):
       return int (pos[0] > midpoint)
     else:
       return int (pos[0] < midpoint)
-
+  
+  # Returns true if state is a dead end
+  def isDeadEnd(self, gameState):
+    return True if len(gameState.getLegalActions(self.index)) == 2 else False
       
   # Returns 0 if no ghosts can be seen (they are farther than 5 spaces away from either agents)
-  def getNearGhostDistance(self, gameState,action):
+  def getNearGhostDistance(self, gameState):
     # Computes distance to invaders we can see
     enemies = [gameState.getAgentState(i) for i in self.getOpponents(gameState)]
     invaders = [a for a in enemies if a.isPacman and a.getPosition() != None]
@@ -300,7 +299,7 @@ class OffensiveAgent(CaptureAgent):
       'nearestGhost': 0.0, #(-(10*self.powerUpTimer) if self.powerUp else 1.0)*self.getNearestGhostDistance(gameState),
       'score': gameState.getScore(),
       'powerUp': 1.0 if gameState.getAgentPosition(self.index) in self.getCapsules(gameState) else 0,
-      'foodEaten': 1.0 if len(self.getFood(gameState).asList()) < self.foodLeft else 0,
+      'foodEaten': 1.0 if len(self.getFood(gameState).asList()) < self.foodLeft else 0
     }
     return features
     
@@ -321,7 +320,11 @@ class OffensiveAgent(CaptureAgent):
       probPositions.append(inf.getBeliefDistribution().argMax())
     distances = map(lambda x: self.getMazeDistance(x, myPosition), probPositions)
     return min(distances)
-    
+
+  # Returns true if state is a dead end
+  def isDeadEnd(self, gameState):
+    return True if len(gameState.getLegalActions(self.index)) == 2 else False
+  
   def getSuccessor(self, gameState, action):
     """
     Finds the next successor which is a grid position (location tuple).
