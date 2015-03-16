@@ -343,40 +343,55 @@ class OffensiveAgent(CaptureAgent):
     return True if len(gameState.getLegalActions(self.index)) == 2 else False
     
   def getFeatures(self, gameState, action):
+    inferredGhostFeature = 1.0/max(self.getClosestInferredGhost(gameState)[1],.1) if (self.getClosestInferredGhost(gameState)[1] > 4) else 3.0/max(self.getClosestInferredGhost(gameState)[1],0.1)
     features =  {
       # Get distance to nearest food
       'nearestFood':1.0/min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getFood(gameState).asList()),
       # Get distance to nearest powerup
       'nearestPowerUp': 1.0 if len(self.getCapsules(gameState))==0 else 1.0/min(self.getMazeDistance(gameState.getAgentPosition(self.index),p) for p in self.getCapsules(gameState)),
-      # Get distance to nearest ghost
-      'nearestGhost': ((-10 * self.powerUpTimer/4) if self.powerUp else 1.0)*self.getNearestGhostDistance(gameState),
       # Don't go down an immediate dead end if scared
-      'deadEnd': 1 if ((not self.powerUp) and self.isDeadEnd(gameState) and self.getNearestGhostDistance(gameState) < 3) else 0,
+      'deadEnd': 1 if ((not self.powerUp) and self.isDeadEnd(gameState) and self.getNearGhostDistance(gameState) < 3) else 0,
       'score': gameState.getScore(),
       'stop': 1 if action == Directions.STOP else 0,
       'foodEaten': 1.0 if len(self.getFood(gameState).asList()) < self.foodLeft else 0,
+      # Go towards the nearest inferred distance
+      'inferredGhost':  inferredGhostFeature if (not self.powerUp) else -inferredGhostFeature    
     }
-
+    #print(features)
     return features
     
   def getWeights(self):
     return {
-      'nearestFood':100.0,
+      'nearestFood':2.0,
       'nearestPowerUp': 100.0,
-      'nearestGhost': -1.0 / 10,
       'score': self.scoreWeight,
-      'deadEnd': -5.0,
+      'deadEnd': -100.0,
       'stop': -5.0,
-      'foodEaten': 50.0
+      'foodEaten': 50.0,
+      'inferredGhost': -1.0,
     }  
     
-  def getNearestGhostDistance(self, gameState):
+  # Returns 0 if no ghosts can be seen (they are farther than 5 spaces away from either agents)
+  def getNearGhostDistance(self, gameState):
+    # Computes distance to invaders we can see
+    enemies = [gameState.getAgentState(i) for i in self.getOpponents(gameState)]
+    invaders = [a for a in enemies if a.isPacman and a.getPosition() != None]
+    nearest = 0
+    if len(invaders) > 0:
+      dists = [self.getMazeDistance(gameState.getAgentPosition(self.index), a.getPosition()) for a in invaders]
+      nearest = min(dists)
+    return nearest
+  
+  # Returns the (position, distance) of the closest ghost based on the inference modules
+  def getClosestInferredGhost(self, gameState):
     probPositions = []
     myPosition = gameState.getAgentPosition(self.index)
     for inf in self.inferenceModules:
       probPositions.append(inf.getBeliefDistribution().argMax())
     distances = map(lambda x: self.getMazeDistance(x, myPosition), probPositions)
-    return min(distances)
+    mindistance = min(distances);
+    return [probPositions[distances.index(mindistance)], mindistance]
+    
 
   # Returns true if state is a dead end
   def isDeadEnd(self, gameState):
